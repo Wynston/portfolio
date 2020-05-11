@@ -1,0 +1,79 @@
+include:
+  - template: Code-Quality.gitlab-ci.yml
+
+stages:
+  - setup
+  - test
+  - build
+  - deploy
+
+install-dependencies:
+  image: node:$NODE_VERSION
+  stage: setup
+  before_script:
+    - npm -g config set user root
+  script:
+    - npm install --production
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - node_modules/
+
+code_quality:
+  stage: setup
+  artifacts:
+    paths: [gl-code-quality-report.json]
+
+test:
+  image: node:$NODE_VERSION
+  stage: test
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - node_modules/
+  before_script:
+    - npm run lint
+  script:
+    - npm run test-coverage
+  coverage: '/All files[^|]*\|[^|]*\s+([\d\.]+)/'
+
+build:production:
+  image: node:$NODE_VERSION
+  stage: setup
+  only:
+    - master
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - node_modules/
+  script:
+    - npm run build:production
+  after_script:
+    - gzip -k build/*js
+    - gzip -k build/*txt
+    - gzip -k build/*html
+    - gzip -k build/*ico
+    - gzip -k build/*json
+    - gzip -k build/static/media/*woff
+    - gzip -k build/static/css/*css
+    - gzip -k build/static/js/*js
+  artifacts:
+    paths:
+      - /builds/brandx/frontend/build
+
+deploy:production:
+  image: node:$NODE_VERSION
+  stage: deploy
+  only:
+    - master
+  environment:
+    name: Production
+    url: https://wynstonramsay.ca
+  dependencies:
+    - build:production:
+  before_script:
+    - npm i -g firebase-tools
+  script:
+    - firebase deploy --token $FIREBASE_TOKEN
+  when: manual
+  allow_failure: false
